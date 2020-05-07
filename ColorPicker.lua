@@ -1,4 +1,5 @@
 -- ColorPicker v1 - Florian ANAYA - 2020
+-- https://github.com/FlorianANAYA/GrandMA2-help/blob/master/ColorPicker.lua
 -- This plugin will create a color picker in a layout view for several
 -- groups of fixtures. It uses the Appearance of the macros to display
 -- colors, so there is no need to mess with images.
