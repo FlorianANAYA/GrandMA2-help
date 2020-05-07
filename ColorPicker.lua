@@ -1,5 +1,4 @@
--- ColorPicker v1 - Florian ANAYA - 2020
--- https://github.com/FlorianANAYA/GrandMA2-help/blob/master/ColorPicker.lua
+-- ColorPicker v2 - Florian ANAYA - 2020
 -- This plugin will create a color picker in a layout view for several
 -- groups of fixtures. It uses the Appearance of the macros to display
 -- colors, so there is no need to mess with images.
@@ -10,6 +9,7 @@
 -- continuous range of macros is automatically selected.
 -- It is possible to include fixtures that only have a color wheel, GrandMA
 -- will pick the one that looks the more like the one asked
+-- Tested GrandMA2 version: 3.7
 -- external ressource used: https://static.impactsf.com/GrandMA2/index.html
 
 -----------------------
@@ -101,14 +101,10 @@ local nbNeededMacros = 0
 local nbNeededExecs = 0
 -- The handle of the progress bar
 local progressBarHandle = 0
--- A variable that should be true
-local active = true
+-- Becomes true at the end of the script, to avoid the user to execute the
+-- plugin twice without a reset of the variables
+local alreadyExecuted = false
 
-
--- Function stolen here https://github.com/egidiusmengelberg/grandma2_colorpicker_plugin/blob/master/ColorPicker.lua
-function getClass(str)
-  return gma.show.getobj.class(gma.show.getobj.handle(str))
-end
 
 -- Logging function
 function log(message)
@@ -176,6 +172,7 @@ function treatGroup (groupPoolId)
     cueNb = cueNb + 1
     currentMacroNb = currentMacroNb + 1
     gma.gui.progress.set(progressBarHandle, currentMacroNb - firstMacroNb)
+    gma.sleep(0.05)
   end
   gma.cmd('Label Executor ' .. tostring(execPage) .. '.' .. tostring(currentExecId) .. ' "Colors ' .. gma.show.getobj.label(gma.show.getobj.handle("Group ".. tostring(groupPoolId))) .. '"')
   currentExecId = currentExecId + 1
@@ -202,7 +199,8 @@ function findFirstAvailableMacro()
   while (not empty) do
     empty = true
     for testedMacroNb=currentMacroNb,currentMacroNb+nbNeededMacros,1 do
-      empty = getClass("Macro "..tostring(testedMacroNb)) == nil
+      local clss = gma.show.getobj.class(gma.show.getobj.handle("Macro "..tostring(testedMacroNb)))
+      empty = clss == nil
       if (not empty) then
         currentMacroNb = testedMacroNb + 1
         break
@@ -263,6 +261,21 @@ function verifyColors()
   end
 end
 
+
+function verifyGroup(groupOrArray)
+  if (type(groupOrArray) == "table") then
+    for groupindex,groupId in pairs(groupOrArray) do
+      verifyGroup(groupId)
+    end
+  else
+    local handle = gma.show.getobj.handle("group " .. tostring(groupOrArray))
+    if (type(handle) == "nil") then
+      gma.gui.msgbox("Unknown group", "One of the specified group doesn't exists.\nThe group ' " .. tostring(groupOrArray) .. " ' coulnd't be found. Please check.")
+      exit()
+    end
+  end
+end
+
 function createGels()
   gma.cmd('Delete Gel "ColorPicker"')
   gma.cmd('Store Gel "ColorPicker"')
@@ -299,28 +312,36 @@ function createLayout()
 end
 
 
-
-
-if (active == true) then
-  -- Execution of the program
-  findFirstAvailableMacro()
-  verifyColors()
-  if (not verifyFreeExecs()) then
-    gma.gui.msgbox("No space for execs", "There is not enough executor left, please specify an other executor ID.\nCheck the page you specified is the one you were thinking about.")
+-- Execution of the program when the user clicks on the plugin
+return function()
+  if (not alreadyExecuted) then
+    if (gma.gui.confirm("Color Picker", "You are about to create a Color Picker on layout " .. tostring(layoutId) .. ".\nBefore continuing, you should have set up the parameters of the script by editing the plugin.")) then
+      findFirstAvailableMacro()
+      verifyColors()
+      verifyGroup(groups)
+      if (not verifyFreeExecs()) then
+        gma.gui.msgbox("No space for execs", "There is not enough executor left, please specify an other executor ID.\nCheck the page you specified is the one you were thinking about.")
+      else
+        gma.cmd("BlindEdit on")
+        progressBarHandle = gma.gui.progress.start("Creating Color Picker") 
+        gma.gui.progress.setrange(progressBarHandle, 0, nbNeededMacros)
+        gma.gui.progress.settext(progressBarHandle, "Creating macros: ")
+        createGels()
+        treatGroupOrArray(groups)
+        gma.cmd("ClearAll")
+        createLayout()
+        gma.gui.progress.settext(progressBarHandle, "Finishing up")
+        gma.cmd("BlindEdit Off")
+        gma.cmd('Delete Gel "ColorPicker"')
+        gma.gui.progress.stop(progressBarHandle)
+        alreadyExecuted = true
+        gma.gui.msgbox("Operation complete", "The Color Picker has been created on layout " .. tostring(layoutId))
+      end
+    else
+      gma.gui.msgbox("Operation canceled", "The creation of the color picker has been aborted")
+    end
   else
-    gma.cmd("BlindEdit on")
-    progressBarHandle = gma.gui.progress.start("Creating Color Picker") 
-    gma.gui.progress.setrange(progressBarHandle, 0, nbNeededMacros)
-    gma.gui.progress.settext(progressBarHandle, "Creating macros: ")
-    createGels()
-    treatGroupOrArray(groups)
-    gma.cmd("ClearAll")
-    createLayout()
-    gma.gui.progress.settext(progressBarHandle, "Finishing up")
-    gma.cmd("BlindEdit Off")
-    gma.cmd('Delete Gel "ColorPicker"')
-    gma.gui.progress.stop(progressBarHandle)
-    gma.gui.msgbox("Operation complete", "The Color Picker has been created on layout " .. tostring(layoutId))
+    gma.gui.msgbox("Operation canceled", "The script has already been executed.\nIf you want to create a second color picker, please reload the plugin (edit the plugin and hit 'reload')")
   end
 end
 
