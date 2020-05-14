@@ -1,4 +1,4 @@
--- ColorPicker v3 - Florian ANAYA - 2020
+-- ColorPicker v4 - Florian ANAYA - 2020
 -- https://github.com/FlorianANAYA/GrandMA2-help
 -- This plugin will create a color picker in a layout view for several
 -- groups of fixtures. It uses the Appearance of the macros to display
@@ -23,19 +23,20 @@
 -- Sub groups can be created, they will have separate masters (ie. {1,2,{3,4,5}})
 local groups = { 1,2,5,6 }
 
--- ¨Page of the execs (all execs will be on this page)
-local execPage = 1
-
 -- ID of first executor to use (There will be as many executors used as
 -- there are groups declared above)
--- If one of the executors already exists, the program will not execute
-local firstExecId = 101
+-- If one of the executors already exists, the program will not execute.
+-- It must include the exec page, the format is X.XXX (ie. 1.101, 5.001 or 7.015)
+local execId = 1.101
 
 -- The ID of the layout to be used.
 -- If a layout already exists at this ID, it will be used anyway
 -- without affecting other elements already present, but the macros
 -- may overlap those other elements
 local layoutId = 1
+
+-- The fade time between colors (in seconds)
+local fadeTime = 1
 
 -- This is the list of colors that will be used in the color picker.
 -- they can be changed and deleted. New colors can be added.
@@ -86,31 +87,33 @@ local firstMacroId = 1
 local currentMacroId = 1
 -- The ID of the last macro that is going to be used
 local lastMacroId = 1
--- number of colors in the color picker
-local nbColors = #colors
 -- The total number of macros that need to be created
 local nbNeededMacros = 0
+
+-- ¨Page of the execs (all execs will be on this page)
+local execPage = 0
 -- The total number of execs needed
 local nbNeededExecs = 0
+-- The ID of the first exec to be used
+local firstExecId = 0
 -- The current exec being used by the plugin
 local currentExecId = firstExecId
 -- Defines the last exec ID used
 local lastExecId = 0
+
+-- number of colors in the color picker
+local nbColors = #colors
 -- The handle of the progress bar
 local progressBarHandle = 0
 -- Becomes true at the end of the script, to avoid the user to execute the
 -- plugin twice without a reset of the variables
 local alreadyExecuted = false
+-- Predeclaration of functions
+local createMacroRowAll, treatGroup, treatGroupOrArray, countNeededMacroNbInGroup, findFirstAvailableMacro, verifyFreeExecs, verifyColors, verifyGroup, createGels, createLayout
 
-
--- Logging function
-local function log(message)
-  gma.echo(message)
-  gma.feedback(message)
-end
 
 -- Creates a row of master macros 
-local function createMacroRowAll()
+createMacroRowAll = function()
   for colorIndex, colorValues in pairs(colors) do 
     gma.cmd('Store Macro 1.' .. tostring(currentMacroId) .. ' "' .. "All " .. colorValues["name"] .. '"')
     gma.cmd('Appearance Macro 1.' .. tostring(currentMacroId) .. ' /r=' .. tostring(colorValues["red"]) .. ' /g=' .. tostring(colorValues["green"]) .. ' /b=' .. tostring(colorValues["blue"]))
@@ -118,7 +121,6 @@ local function createMacroRowAll()
   end 
 end
 
-local treatGroup
 treatGroup  = function(groupPoolId)
   local groupFirstMacroId = currentMacroId -- ID of the first macro of this row
   local lastMacroId = currentMacroId + nbColors -1 -- ID of the last macro of this row
@@ -133,7 +135,7 @@ treatGroup  = function(groupPoolId)
     gma.cmd('At gel ' .. colorValues["swatchbook"])
     gma.cmd('Store Cue ' .. tostring(cueNb) .. ' Executor ' .. tostring(execPage) .. '.' .. tostring(currentExecId))
     gma.cmd('Label Cue ' .. tostring(cueNb) .. ' Executor ' .. tostring(execPage) .. '.' .. tostring(currentExecId) .. ' "' ..colorValues["name"] .. '"')
-    gma.cmd('Assign Cue ' .. tostring(cueNb) .. ' Executor ' .. tostring(execPage) .. '.' .. tostring(currentExecId) .. ' /CMD="Label Macro 1.' .. tostring(groupFirstMacroId) .. ' Thru 1.' .. tostring(lastMacroId) .. ' _ ; Label Macro 1.' .. tostring(currentMacroId) .. ' VVVVVVVVVVVV"')
+    gma.cmd('Assign Cue ' .. tostring(cueNb) .. ' Executor ' .. tostring(execPage) .. '.' .. tostring(currentExecId) .. ' /fade=' .. tostring(fadeTime) .. ' /CMD="Label Macro 1.' .. tostring(groupFirstMacroId) .. ' Thru 1.' .. tostring(lastMacroId) .. ' _ ; Label Macro 1.' .. tostring(currentMacroId) .. ' VVVVVVVVVVVV"')
     gma.cmd('Store Macro 1.' .. tostring(currentMacroId))
     gma.cmd('Label Macro 1.' .. tostring(currentMacroId) .. ' "_"')
     gma.cmd('Store Macro 1.' .. tostring(currentMacroId) .. '.1')
@@ -149,7 +151,6 @@ treatGroup  = function(groupPoolId)
 end
 
 -- Recursive function that treats a group ID or an array of group ID
-local treatGroupOrArray
 treatGroupOrArray = function(groupNbOrArray)
   if (type(groupNbOrArray) == "table") then
     local macroIdOfAllRow = currentMacroId -- We store the ID of the first master macro, before the global variable "currentMacroId" is changed by the function
@@ -176,8 +177,6 @@ end
 
 -- Recursive function that counts the total number of macros needed for a table
 -- of group ID using the amount of colors per group.
--- It also counts the number of execs needed
-local countNeededMacroNbInGroup
 countNeededMacroNbInGroup = function(groupNbOrArray)
   nbNeededMacros = nbNeededMacros + nbColors -- we add the number of colors
   if (type(groupNbOrArray) == "table") then
@@ -192,8 +191,8 @@ end
 
 -- Count the number of total needed macros and finds the first available
 -- macro ID that has a suffisant following free space
-local function findFirstAvailableMacro()
-  countNeededMacroNbInGroup(groups)
+findFirstAvailableMacro = function()
+  countNeededMacroNbInGroup (groups)
   local empty = false
   while (not empty) do
     empty = true
@@ -212,14 +211,14 @@ end
 
 -- Verifys if there is a suffisent number of unsuned execs
 -- counting from the one specified by the user
-local function verifyFreeExecs()
+verifyFreeExecs = function()
   local allFree = true
   for execNb=currentExecId,currentExecId+nbNeededExecs-1,1 do
     local execHandle = gma.show.getobj.handle("Executor " .. tostring(execPage) .. '.' .. tostring(execNb))
     if (execHandle == nil) then
-      log("Executor " .. tostring(execNb) .. " is not used.")
+      gma.feedback("Executor " .. tostring(execNb) .. " is not used.")
     else
-      log("Executor " .. tostring(execNb) .. " is used")
+      gma.feedback("Executor " .. tostring(execNb) .. " is used")
       allFree = false
     end
   end
@@ -228,11 +227,11 @@ end
 
 -- verifies that all colors provided have RGB and that swatchbooks
 -- colors provided exist
-local function verifyColors()
+verifyColors = function()
   local allGood = true
   for colorIndex,colorValues in ipairs(colors) do
     if (type(colorValues) ~= "table") then
-      gma.gui.msgbox("Incorrect values", "Your color definition is incorrect, please check.")
+      gma.gui.msgbox("Incorrect values", "Your color definition is incorrect, please check")
       exit()
     end
     if (type(colorValues["name"]) ~= "string") then
@@ -257,7 +256,7 @@ local function verifyColors()
         exit()
       end
       if (gma.show.getobj.handle('gel ' .. colorValues["swatchbook"]) == nil) then
-        gma.gui.msgbox("Unknown gel", "The gel ' " .. colorValues["swatchbook"] .. " ' doesn't exist in color ' " .. colorValues["name"] .. " '")
+        gma.gui.msgbox("Unknown gel", "The gel ' " .. colorValues["swatchbook"] .. " ' is unknown in color ' " .. colorValues["name"] .. " '")
         exit()
       end
     end
@@ -265,7 +264,6 @@ local function verifyColors()
 end
 
 
-local verifyGroup
 verifyGroup = function(groupOrArray)
   if (type(groupOrArray) == "table") then
     for groupindex,groupId in pairs(groupOrArray) do
@@ -280,7 +278,7 @@ verifyGroup = function(groupOrArray)
   end
 end
 
-function createGels()
+createGels = function()
   gma.cmd('Delete Gel "ColorPicker"')
   gma.cmd('Store Gel "ColorPicker"')
   for colorIndex,colorValues in ipairs(colors) do
@@ -293,7 +291,7 @@ function createGels()
 end
 
 -- Creates and names the layout if it doesn't already exists
-local function createLayout()
+createLayout = function()
   local layout = gma.show.getobj.handle("Layout " .. tostring(layoutId))
   if (layout == nil) then
     gma.cmd('Store layout ' .. tostring(layoutId))
@@ -323,6 +321,12 @@ return function()
     currentMacroId = 1
     lastMacroId = 1
     nbNeededMacros = 0
+    execPage = math.floor(execId)
+    firstExecId = math.tointeger(tostring((execId - execPage) * 1000))
+    if (execPage <= 0 or firstExecId <= 0) then
+      gma.gui.msgbox("Incorrect exec", "The specified executor " .. tostring(execId) .. " is invalid.\nIt must include the exec page, in the format X.XXX (ie. 1.101, 5.001, 10.015).")
+      exit()
+    end
     nbNeededExecs = 0
     currentExecId = firstExecId
     findFirstAvailableMacro()
@@ -355,4 +359,5 @@ return function()
     gma.gui.msgbox("Operation canceled", "The script has already been executed.\nIf you want to create a second color picker, please reload the plugin (edit the plugin and hit 'reload')")
   end
 end
+
 
