@@ -1,4 +1,4 @@
--- ColorPicker v6 - Florian ANAYA - 2020
+-- ColorPicker v7 - Florian ANAYA - 2020
 -- https://github.com/FlorianANAYA/GrandMA2-help
 -- This plugin will create a color picker in a layout view for several
 -- groups of fixtures. It automatically creates and imports images into GMA2
@@ -16,7 +16,7 @@
 -- Don't forget that, if the plugin doesn't work and shows no message at all,
 -- you might have made a typo in the config, you'll find more info in the
 -- system monitor.
--- Tested GrandMA2 version: 3.7, 3.8, 3.9
+-- Tested GrandMA2 version: 3.7
 
 -----------------------
 -- Start of settings --
@@ -129,7 +129,7 @@ local currentExecId = firstExecId
 -- Defines the last exec ID used
 local lastExecId = 0
 -- Content of the XML file that will be used to create the layout. It is initialized with a basic header
-local xmlFileContent = '<?xml version="1.0" encoding="utf-8"?><MA xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.malighting.de/grandma2/xml/MA" xsi:schemaLocation="http://schemas.malighting.de/grandma2/xml/MA http://schemas.malighting.de/grandma2/xml/3.7.0/MA.xsd" major_vers="3" minor_vers="7" stream_vers="0"><Info datetime="2020-06-03T19:21:08" showfile="Florian ANAYA" /><Group index="0" name="Color Picker"><LayoutData index="0" marker_visible="true" background_color="000000" visible_grid_h="0" visible_grid_w="0" snap_grid_h="0.5" snap_grid_w="0.5" default_gauge="Filled &amp; Symbol" subfixture_view_mode="DMX Layer"><CObjects>'
+local xmlFileContent = '<?xml version="1.0" encoding="utf-8"?><MA xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.malighting.de/grandma2/xml/MA" xsi:schemaLocation="http://schemas.malighting.de/grandma2/xml/MA http://schemas.malighting.de/grandma2/xml/3.7.0/MA.xsd" major_vers="1" minor_vers="0" stream_vers="0"><Info datetime="2020-06-03T19:21:08" showfile="Florian ANAYA" /><Group index="0" name="Color Picker"><LayoutData index="0" marker_visible="true" background_color="000000" visible_grid_h="0" visible_grid_w="0" snap_grid_h="0.5" snap_grid_w="0.5" default_gauge="Filled &amp; Symbol" subfixture_view_mode="DMX Layer"><CObjects>'
 -- Defines the content of the XML file that will hold the text (in MA2 XML, texts are further that the 
 -- macros)
 local textFileContent = ''
@@ -292,12 +292,12 @@ end
 -- Also count the number of needed images
 countNeededMacroNbInGroup = function(groupNbOrArray)
   nbNeededMacros = nbNeededMacros + nbColors -- we add the number of colors
-  nbNeededImages = nbNeededImages + nbColors
   if (type(groupNbOrArray) == "table") then
     for groupIndex, value in ipairs(groupNbOrArray) do
       countNeededMacroNbInGroup(value)
     end 
   else
+    nbNeededImages = nbNeededImages + nbColors
     nbNeededExecs = nbNeededExecs + 1
   end
   lastExecId = firstExecId + nbNeededExecs - 1
@@ -436,7 +436,7 @@ verifyGroup = function(groupOrArray)
   else
     local handle = gma.show.getobj.handle("group " .. addQuotes(groupOrArray))
     if (handle == nil) then
-      gma.gui.msgbox("Unknown group", "One of the specified group doesn't exists.\nThe group ' " .. tostring(groupOrArray) .. " ' coulnd't be found. Please check.")
+      gma.gui.msgbox("Unknown group", "One of the specified group doesn't exists.\nThe group ' " .. tostring(groupOrArray) .. " ' could'nt be found. Please check.")
       return false
     end
   end
@@ -518,7 +518,7 @@ createImage = function(red, green, blue, full, imageId)
   local encoded = base64.encode(byteArray)
   
   -- Header of the XML file that will be used to import the image
-  local header = '<?xml version="1.0" encoding="utf-8"?>\n<MA xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.malighting.de/grandma2/xml/MA" xsi:schemaLocation="http://schemas.malighting.de/grandma2/xml/MA http://schemas.malighting.de/grandma2/xml/3.7.0/MA.xsd" major_vers="3" minor_vers="7" stream_vers="0">\n<Info datetime="2020-05-30T19:50:23" showfile="Florian ANAYA" />\n<UserImage index="13" name="AttributePickerImage" hasTransparency="false" width="8" height="8">\n<Image>'
+  local header = '<?xml version="1.0" encoding="utf-8"?>\n<MA xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.malighting.de/grandma2/xml/MA" xsi:schemaLocation="http://schemas.malighting.de/grandma2/xml/MA http://schemas.malighting.de/grandma2/xml/3.7.0/MA.xsd" major_vers="1" minor_vers="0" stream_vers="0">\n<Info datetime="2020-05-30T19:50:23" showfile="Florian ANAYA" />\n<UserImage index="13" name="AttributePickerImage" hasTransparency="false" width="8" height="8">\n<Image>'
   
   local encodedPath = gma.show.getvar('PATH') ..  '/importexport/tempimage.xml'
   local encodedFile = io.open(encodedPath, "w")
@@ -717,7 +717,13 @@ return function()
   end
   gma.gui.progress.stop(progressBarHandle)
   
-  if (not gma.gui.confirm("Color Picker", "The Color Picker is about to be created on:\n- Layout " .. tostring(layoutId) ..  "\n- Executors " .. tostring(execPage) .. "." .. tostring(firstExecId) .. " Thru " .. tostring(execPage) .. "." .. tostring(lastExecId) .. "\n- Macros " .. tostring(firstMacroId) .. " Thru " .. tostring(lastMacroId) .. "\nIf this is not correct, please edit the plugin to change those values.")) then
+  local txt = "The Color Picker is about to be created on:\n- Layout " .. tostring(layoutId) ..  "\n- Executors " .. tostring(execPage) .. "." .. tostring(firstExecId) .. " Thru " .. tostring(execPage) .. "." .. tostring(lastExecId) .. "\n- Macros " .. tostring(firstMacroId) .. " Thru " .. tostring(lastMacroId)
+  if (useImages == true) then
+    txt = txt .. "\nImages " .. tostring(firstImageId) .. " Thru " .. tostring(lastImageId)
+  end
+  txt = txt .. "\nIf this is not correct, please edit the plugin to change those values."
+  
+  if (gma.show.getvar("VERSION") ~= "3.1.2.5" and not gma.gui.confirm("Color Picker", txt)) then
     gma.feedback("Plugin exited: Operation aborted by the user")
     gma.gui.msgbox("Operation canceled", "The creation of the color picker has been aborted.")
     return
