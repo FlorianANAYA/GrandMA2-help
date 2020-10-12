@@ -1,22 +1,19 @@
--- ColorPicker v7 - Florian ANAYA - 2020
+-- ColorPicker v8 - Florian ANAYA - 2020
 -- https://github.com/FlorianANAYA/GrandMA2-help
 -- This plugin will create a color picker in a layout view for several
 -- groups of fixtures. It automatically creates and imports images into GMA2
--- so there is no need to do it manually. It is possible to disable images for
--- performances (I think, it has not been tested). The plugin will use
--- the Appearance of the macros to display colors.
--- The groups are defined by the user below.
--- The plugin will create master macros that change the color of all fixtures.
--- It also supports layers, so that the user can have several masters.
+-- so there is no need to do it manually (images can also be disabled).
+-- The plugin will create "master macros" that change the color of all fixtures.
+-- It also supports layers, so that the user can have several "masters".
 -- It uses executors (defined by the user) and macros. The first available
 -- continuous range of macros is automatically selected.
--- It is possible to include fixtures that only have a color wheel, GrandMA
+-- It is possible to include fixtures that only have a color wheel, GMA
 -- will automatically pick the one that looks the more like the one asked
 -- Note: any line that starts with -- is a comment and is not used by the plugin.
 -- Don't forget that, if the plugin doesn't work and shows no message at all,
 -- you might have made a typo in the config, you'll find more info in the
 -- system monitor.
--- Tested GrandMA2 version: 3.7
+-- Tested GrandMA2 version: 3.7, 3.8, 3.9
 
 -----------------------
 -- Start of settings --
@@ -24,8 +21,8 @@
 
 -- List of group IDs that will be used in the color picker.
 -- Group IDs must be separated by commas ( , ). It is possible to use group
--- names instead of IDs, don't forget to include quotes (ie. {1, 2, "Mac Vipers", 8} )
--- Sub groups can be created, they will have separate masters (ie. {1,2,{3,4,5}} )
+-- names instead of IDs, don't forget to include quotes (ie. {"Mac AURA", "Mac Vipers", "Pointe"} )
+-- Sub groups can be created, they will have separate masters (ie. { 1, 2, { 3, 4, 5 } } )
 local groups = { 1,7,15,16 }
 
 -- ID of first executor to use (There will be as many executors used as
@@ -34,33 +31,28 @@ local groups = { 1,7,15,16 }
 -- It must include the exec page, the format is X.XXX (ie. 1.101, 5.001 or 7.015)
 local execId = 1.101
 
--- The ID of the layout to be used.
--- If a layout already exists at this ID, it will be used anyway
--- without affecting other elements already present, but the macros
--- may overlap those other elements.
-local layoutId = 1
+-- The ID of the layout to use.
+-- The provided layout must be empty or the plugin won't work.
+local layoutId = 0
 
--- The fade time between colors (in seconds)
+-- The fade time between colors (in seconds).
 local fadeTime = 1
 
 -- This is the list of colors that will be used in the color picker.
--- they can be changed and deleted. New colors can be added.
--- They are defined by RGB or swatchbook entry (gel). A list of all gels
--- can be found in the color picker.
+-- they can be changed, added and deleted.
+-- They are defined by RGB or swatchbook entry (gel).
 --  If a swatchbook color is defined, it will be used instead of RGB value.
--- Nevertheless, RGB values must be present for the macro color appearance.
 -- RGB colors are defined as percent. Swatchbook colors can be defined by
 -- name (ie. "MA colors"."White") or by number (ie. 1.1), they must be enclosed
 -- by 'quotes' like this: '"lee"."primary red"' or '8.106'.
--- Names can be anything you like and can contain spaces,
--- but must be present and there cannot be duplicate.
--- White and other colors cannot be defined, but they will be used anyway.
--- GrandMA2 will translate the RGB values you provide to whatever is
--- available in the fixture (RGBW, RGBWA+UV, or anything that is available).
+-- Names can be anything you like, can contain spaces or can be omited.
+-- Only RGB values can be defined, but GMA2 will translate the RGB values
+-- to whatever is available in the fixture (RGBW, RGBWA+UV, etc).
+-- GMA2 will also pick the closest color on fixtures that only have a color wheel.
 local colors =
 {
-  {['name'] = 'White CTO', ['red'] = 100, ['green'] = 100, ['blue'] = 70, ["swatchbook"] = '"Lee"."full CT orange"'},
-  {['name'] = 'White CTB', ['red'] = 100, ['green'] = 100, ['blue'] = 100, ["swatchbook"] = '8.120'},
+  {["name"] = "White CTO", ["swatchbook"] = '"Lee"."full CT orange"'},
+  {["name"] = "White CTB", ["swatchbook"] = '8.120'},
   {['name'] = 'Red', ['red'] = 100, ['green'] = 0, ['blue'] = 0},
   {['name'] = 'Orange', ['red'] = 100, ['green'] = 50, ['blue'] = 0,},
   {['name'] = 'Yellow', ['red'] = 100, ['green'] = 100, ['blue'] = 0,},
@@ -77,8 +69,10 @@ local colors =
 
 
 -- Defines if the plugin will use images or not 
--- 'true' means that images will be generated and used, 'false' otherwise
--- I didn't test it precisely, but I think that using images is less performant
+-- 'true' means that images will be generated and used, 'false' otherwise.
+-- Images are fancier but less performant. It is recommanded to disable them
+-- on slow onPC setup or large complexe show. But generally, you shouldn't have 
+-- any performance problem.
 local useImages = true
 
 -- Layout settings
@@ -391,36 +385,82 @@ end
 -- verifies that all colors provided have RGB and that swatchbooks
 -- colors provided exist
 verifyColors = function()
+  -- We search for the first free color preset that we can use to get color names
+  local presetId = 0
+  local found = false
+  while (found == false) do
+    presetId = presetId + 1
+    local handle = gma.show.getobj.handle("Preset 4." .. tostring(presetId))
+    found = (handle == nil)
+  end
+  gma.feedback("Found first available color preset: 4." .. tostring(presetId))
+  
   for colorIndex,colorValues in ipairs(colors) do
+    
     if (type(colorValues) ~= "table") then
       gma.gui.msgbox("Incorrect values", "Your color definition is incorrect, please check")
       return false
     end
-    if (type(colorValues["name"]) ~= "string") then
-      gma.gui.msgbox("Missing value", "All colors must have a name. \nColor n°" .. tostring(colorIndex) .. " doesn't have a (proper) name")
-      return false
-    end
-    for colorIndex = 1,#colors-1,1 do
-      for secondColorIndex = colorIndex+1,#colors,1 do
-        if (colors[colorIndex]["name"] == colors[secondColorIndex]["name"]) then
-          gma.gui.msgbox("Invalid color name", "There cannot be two colors with the same name (' " .. colors[colorIndex]["name"] .. " ')")
-          return false
-        end
+    
+    if (colorValues["swatchbook"] == nil) then -- No swatchbook entry
+      -- We verify that rgb values were provided
+      if (type(colorValues["red"]) ~= "number" or type(colorValues["green"]) ~= "number" or type(colorValues["blue"]) ~= "number") then
+        gma.gui.msgbox("Missing value", "All colors must have RGB values (even if you are using a swatchbook value).\nColor  n°" .. tostring(colorIndex) .. " is missing red, green or blue.")
+        return false
       end
-    end
-    if (type(colorValues["red"]) ~= "number" or type(colorValues["green"]) ~= "number" or type(colorValues["blue"]) ~= "number") then
-      gma.gui.msgbox("Missing value", "All colors must have RGB values (even if you are using a swatchbook value).\nColor ' " .. colorValues["name"] .. " ' is missing red, green or blue.")
-      return false
-    end
-    if (type(colorValues["swatchbook"]) ~= "nil") then
+      -- We verify that a name has been provided
+      -- If not, we create a color preset (with the ID we found before) and store the
+      -- color in that preset. GrandMA will predict a name. We take that name and delete the preset
+      if (type(colorValues["name"]) ~= "string") then
+        -- Assigning rgb color in the programmer
+        gma.cmd('Attribute "colorrgb1" At ' .. tostring(colorValues["red"]))
+        gma.cmd('Attribute "colorrgb2" At ' .. tostring(colorValues["green"]))
+        gma.cmd('Attribute "colorrgb3" At ' .. tostring(colorValues["blue"]))
+        -- Storing preset
+        gma.cmd("Store Preset 4." .. tostring(presetId))
+        -- Retriving the name GMA gave to the preset
+        local presetHandle = gma.show.getobj.handle("Preset 4." .. tostring(presetId))
+        local name = gma.show.property.get(presetHandle, "Name")
+        colorValues["name"] = name
+        -- Deleting the preset
+        gma.cmd("Delete Preset 4." .. tostring(presetId))
+        gma.cmd("ClearAll")
+      end
+    else -- A swatchbook entry has been given
       if (type(colorValues["swatchbook"]) ~= "string") then
         gma.gui.msgbox("Incorrect value", "The gel of the color ' " .. colorValues["name"] .. " ' is not correct.\nCheck that you correctly insterted 'quotes'")
         return false
       end
-      if (gma.show.getobj.handle('gel ' .. colorValues["swatchbook"]) == nil) then
-        gma.gui.msgbox("Unknown gel", "The gel ' " .. colorValues["swatchbook"] .. " ' is unknown in color ' " .. colorValues["name"] .. " '")
+      -- We check that the provided gel exists
+      local gelHandle = gma.show.getobj.handle('Gel ' .. colorValues["swatchbook"])
+      if (gelHandle == nil) then
+        gma.gui.msgbox("Unknown gel", "The gel ' " .. colorValues["swatchbook"] .. " ' is unknown in color n°" .. colorIndex)
         return false
       end
+      -- We check that the provided gel is a gel
+      -- (The user could give '4' instead of '4.1'. 'Gel 4' is valid
+      -- so the previous check will work as normal)
+      if (gma.show.getobj.class(gelHandle) ~= "CMD_GEL") then
+        gma.gui.msgbox("Unknown gel", "The gel ' " .. colorValues["swatchbook"] .. " ' is not a gel.\nA valid swatchbook gel should look like '8.120' fo example.")
+        return false
+      end
+      -- If the user didn't provide a name for the color, we use the gel name
+      if (type(colorValues["name"]) ~= "string") then
+        colorValues["name"] = gma.show.property.get(gelHandle, "Name")
+      end
+      -- We get the RGB value in the gel and store it in the color values if they don't exist
+      local rgb = gma.show.property.get(gelHandle, "Color")
+      if (type(colorValues["red"]) ~= "number") then
+        colorValues["red"] = tonumber(rgb:sub(1, rgb:find(" ") - 1))
+      end
+      rgb = rgb:sub(rgb:find(" ") + 1)
+      if (type(colorValues["green"]) ~= "number") then
+        colorValues["green"] = tonumber(rgb:sub(1, rgb:find(" ") - 1))
+      end
+      if (type(colorValues["blue"]) ~= "number") then
+        colorValues["blue"] = tonumber(rgb:sub(rgb:find(" ") + 1))
+      end
+      
     end
   end
   return true
@@ -445,28 +485,40 @@ end
 
 verifyLayout = function()
   if (type(layoutId) ~= "number") then
-    gma.gui.msgbox("Invalid layout ID", "The specified layout ID is not correct, please edit the plugin to change the specified value")
+    gma.gui.msgbox("Invalid layout ID", "The specified layout ID is not a number, please edit the plugin to change the value")
     return false
   end
-  if (layoutId <= 0) then
-    gma.gui.msgbox("Invalid layout ID", "The specified layout ID is not correct, please edit the plugin to change the specified value")
+  if (layoutId < 0) then
+    gma.gui.msgbox("Invalid layout ID", "' " .. tostring(layoutId) .. " ' is not a valid value. Please edit the plugin to change this value")
     return false
   end
-  local layoutHandle = gma.show.getobj.handle("Layout " .. tostring(layoutId))
-  if (layoutHandle == nil) then -- layout is empty
-    -- We check that we have not reached the maximum layout ID.
-    -- I tested and found that 10000 is the maximum, but this value may
-    -- evolve in the future or between different installation, so we test
-    -- by storing the provided layout and verifying that it exists.
-    gma.cmd("Store Layout " .. tostring(layoutId))
-    layoutHandle = gma.show.getobj.handle("Layout " .. tostring(layoutId))
-    gma.cmd("Delete Layout " .. tostring(layoutId))
-    if (layoutHandle == nil) then
-      gma.gui.msgbox("Invalid layout ID", "The provided layout ID is too high")
+  if (layoutId == 0) then
+    -- If the user specifies layout 0, we need to search for the first available layout
+    local found = false
+    while (found == false) do
+      layoutId = layoutId + 1
+      local layoutHandle = gma.show.getobj.handle("Layout " .. tostring(layoutId))
+      found = layoutHandle == nil
+    end
+  else
+    -- The user provided a layout ID different than zero
+    -- We check that it does not already exist
+    local layoutHandle = gma.show.getobj.handle("Layout " .. tostring(layoutId))
+    if (layoutHandle ~= nil) then
+      -- layout is already used
+      gma.gui.msgbox("Invalid layout ID", "The provided layout is already used\nPlease edit the config of the plugin to change the layout to use,\nor delete the layout")
       return false
     end
-  else -- layout is already used
-    gma.gui.msgbox("Invalid layout ID", "The provided layout is already used\nPlease edit the config of the plugin to change the layout to use\nor delete the layout")
+  end
+  -- We check that we have not reached the maximum layout ID.
+  -- I tested and found that 10000 is the maximum, but this value may
+  -- evolve in the future or between different installation, so we test
+  -- by storing the provided layout and verifying that it exists.
+  gma.cmd("Store Layout " .. tostring(layoutId))
+  layoutHandle = gma.show.getobj.handle("Layout " .. tostring(layoutId))
+  gma.cmd("Delete Layout " .. tostring(layoutId))
+  if (layoutHandle == nil) then
+    gma.gui.msgbox("Invalid layout ID", "The provided layout ID is too high")
     return false
   end
   return true
@@ -493,13 +545,18 @@ createImages = function()
 end
 
 createGels = function()
+  -- We create an empty swatchbook to store colors that don't use swatchbook
   gma.cmd('Delete Gel "ColorPicker"')
   gma.cmd('Store Gel "ColorPicker"')
   for colorIndex,colorValues in ipairs(colors) do
+    -- If the color already uses a swatchbook entry, we don't touch it
+    -- If the color doesn't use a swatchbook entry, we create one in our empty swatchbook
     if (type(colorValues["swatchbook"]) == "nil") then
-      gma.cmd('Store Gel "ColorPicker"."' .. colorValues["name"] .. '"')
-      gma.cmd('Assign Gel "ColorPicker"."' .. colorValues["name"] .. '" /color="' .. colorValues['red'] .. ' ' .. colorValues['green'] .. ' ' .. colorValues['blue'] .. '"')
-      colorValues["swatchbook"] = '"ColorPicker"."' .. colorValues["name"] .. '"'
+      -- We add a number at the beginning of the gel name so that there can be two gels with the same name
+      local gelName = tostring(colorIndex) .. '-' .. colorValues["name"]
+      gma.cmd('Store Gel "ColorPicker"."' .. gelName .. '"')
+      gma.cmd('Assign Gel "ColorPicker"."' .. gelName .. '" /color="' .. colorValues['red'] .. ' ' .. colorValues['green'] .. ' ' .. colorValues['blue'] .. '"')
+      colorValues["swatchbook"] = '"ColorPicker"."' .. gelName .. '"'
     end
   end
 end
@@ -633,6 +690,7 @@ return function()
     gma.gui.msgbox("Operation canceled", "The script has already been executed.\nIf you want to create a second color picker, please reload the plugin (edit the plugin and hit 'reload')")
     return
   end
+  gma.cmd("ClearAll")
   
   -- We initialize variables (in case the plugin is executed twice without being reloaded)
   firstMacroId = 1
@@ -659,6 +717,16 @@ return function()
     gma.gui.msgbox("Incorrect exec", "The specified executor " .. tostring(execId) .. " is invalid.\nIt must include the exec page, in the format X.XXX (ie. 1.101, 5.001, 10.015).")
     gma.feedback("Plugin exited: Incorrect first executor")
     return
+  end
+  -- If the exec page doesn't exist
+  if (gma.show.getobj.handle("Page " .. tostring(execPage)) == nil) then
+    gma.cmd("Page " .. execPage) -- We try to create it
+    -- And we verify that it now exists because somethimes it doesn't work
+    if (gma.show.getobj.handle("Page " .. tostring(execPage)) == nil) then
+      gma.gui.msgbox("Incorrect exec", "The specified executor " .. tostring(execId) .. " is invalid.\nPage " .. tostring(execPage) .. " doesn't exist.")
+      gma.feedback("Plugin exited: Incorrect first executor's page")
+      return
+    end
   end
   currentExecId = firstExecId
   
