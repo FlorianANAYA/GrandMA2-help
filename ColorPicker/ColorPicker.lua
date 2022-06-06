@@ -1,4 +1,4 @@
--- ColorPicker v9 - Florian ANAYA - 2020-2021
+-- ColorPicker v10 - Florian ANAYA - 2020-2022
 -- https://github.com/FlorianANAYA/GrandMA2-help
 -- This plugin will create a color picker in a layout view for several
 -- groups of fixtures. It automatically creates and imports images into GMA2
@@ -33,10 +33,13 @@ local execId = 1.101
 
 -- The ID of the layout to use.
 -- The provided layout must be empty or the plugin won't work.
-local layoutId = 0
+local layoutId = 1
 
 -- The fade time between colors (in seconds).
 local fadeTime = 1
+
+-- If true, will create two more rows of color picker that will only change two color presets
+local createColorFXSelector = false
 
 -- This is the list of colors that will be used in the color picker.
 -- they can be changed, added and deleted.
@@ -111,6 +114,16 @@ local lastEmptyImageId = 14
 local firstFullImageId = 14
 -- ID of the last image representing a full color
 local lastFullImageId = 14
+-- ID of the first color preset that would be used if color FX creation is enabled
+local firstColorPresetId = 1
+-- ID of the current color preset that would be used if color FX creation is enabled
+local currentColorPresetId = 1
+-- ID of the last color preset that would be used if color FX creation is enabled
+local lastColorPresetId = 1
+-- ID of the color preset that is used as the low color fx preset
+local lowFXColorPresetId = 1
+-- ID of the color preset that is used as the high color fx preset
+local highFXColorPresetId = 1
 
 -- ¨Page of the execs (all execs will be on this page)
 local execPage = 0
@@ -147,7 +160,7 @@ local progressBarHandle = 0
 -- plugin twice without a reset of the variables
 local alreadyExecuted = false
 -- Predeclaration of functions
-local addQuotes, createImage, createMacroRowAll, treatGroup, treatGroupOrArray, countNeededMacroNbInGroup, findFirstAvailableMacro, findFirstAvailableImage, verifyFreeExecs, verifyColors, verifyGroup, createGels, verifyLayout, createDeleteColorPickerMacro
+local addQuotes, createImage, createMacroRowAll, treatGroup, treatGroupOrArray, countNeededMacroNbInGroup, findFirstAvailableMacro, findFirstAvailableImage, verifyFreeExecs, verifyColors, verifyGroup, createGels, verifyLayout, createDeleteColorPickerMacro, findFirstAvailableColorPresets, createColorFXPicker
 -- Used by the base64 library
 local base64 = {}
 
@@ -294,6 +307,9 @@ countNeededMacroNbInGroup = function(groupNbOrArray)
     nbNeededImages = nbNeededImages + nbColors
     nbNeededExecs = nbNeededExecs + 1
   end
+  if (createColorFXSelector) then
+    nbNeededImages = nbNeededImages + (2 * nbColors)
+  end
   lastExecId = firstExecId + nbNeededExecs - 1
 end
 
@@ -304,6 +320,10 @@ findFirstAvailableMacro = function()
   -- Count the number of needed macros
   countNeededMacroNbInGroup (groups)
   nbNeededMacros = nbNeededMacros + 1 -- We count the "delete picker" macro
+  -- We count the macros needed for the colorFX, if enabled
+  if (createColorFXSelector) then
+    nbNeededMacros = nbNeededMacros + (2 * nbColors)
+  end
   local empty = false
   while (not empty) do
     empty = true
@@ -332,7 +352,7 @@ findFirstAvailableMacro = function()
   return true
 end
 
--- Finds the first available image ID that has a sufficient following free
+-- Finds the first available image ID
 -- space. Also verifies that the maximum image ID has not been reached.
 findFirstAvailableImage = function()
   local empty = false
@@ -364,6 +384,41 @@ findFirstAvailableImage = function()
   lastEmptyImageId = firstEmptyImageId + nbColors - 1
   firstFullImageId = lastEmptyImageId + 1
   lastFullImageId = firstFullImageId + nbColors - 1
+  return true
+end
+
+
+-- Finds the first available color preset ID that has a suffisant following free space.
+-- Also verifies that the maximum color preset ID has not been reached.
+findFirstAvailableColorPresets = function()
+  local empty = false
+  local nbNeededColorPresets = nbColors + 2
+  while (not empty) do
+    empty = true
+    for testedColorPresetNb=currentColorPresetId,currentColorPresetId+nbNeededColorPresets-1,1 do
+      local handle = gma.show.getobj.handle("Preset 4."..tostring(testedColorPresetNb))
+      empty = handle == nil
+      if (not empty) then
+        currentColorPresetId = testedColorPresetNb + 1
+        break
+      end
+    end 
+  end
+  firstColorPresetId = currentColorPresetId
+  lastColorPresetId = firstColorPresetId  + nbNeededColorPresets-1
+  lowFXColorPresetId = lastColorPresetId - 1
+  highFXColorPresetId = lastColorPresetId
+  -- We check that we have not reached the maximum color preset ID.
+  -- I tested and found that 10000 is the maximum, but this value may
+  -- evolve in the future or between different installation, so we test
+  -- by storing the last macro and verifying that it exists.
+  gma.cmd("Store Preset 4." .. tostring(lastColorPresetId))
+  local presetHandle = gma.show.getobj.handle("Preset 4." .. tostring(lastColorPresetId))
+  gma.cmd("Delete Preset 4." .. tostring(lastColorPresetId))
+  if (presetHandle == nil) then
+    gma.gui.msgbox("Not enough color preset available", "The maximum number of color preset has been reached.\nThere are not enough available color preset to create the Color Picker.")
+    return false
+  end
   return true
 end
 
@@ -547,6 +602,7 @@ end
 
 createGels = function()
   -- We create an empty swatchbook to store colors that don't use swatchbook
+  gma.cmd('ClearAll')
   gma.cmd('Delete Gel "ColorPicker"')
   gma.cmd('Store Gel "ColorPicker"')
   for colorIndex,colorValues in ipairs(colors) do
@@ -559,6 +615,23 @@ createGels = function()
       gma.cmd('Assign Gel "ColorPicker"."' .. gelName .. '" /color="' .. colorValues['red'] .. ' ' .. colorValues['green'] .. ' ' .. colorValues['blue'] .. '"')
       colorValues["swatchbook"] = '"ColorPicker"."' .. gelName .. '"'
     end
+	if (createColorFXSelector) then
+	  gma.cmd('Fixture 1 Thru')
+      gma.cmd('At Gel ' .. addQuotes(colorValues["swatchbook"]))
+      gma.cmd('Store Preset 4.' .. tostring(currentColorPresetId) .. ' /u')
+      gma.cmd('Label Preset 4.' .. tostring(currentColorPresetId) .. ' "ColorPicker ' .. colorValues["name"] .. '"')
+      gma.cmd('ClearAll')
+      currentColorPresetId = currentColorPresetId + 1
+	end
+  end
+  if (createColorFXSelector) then
+    gma.cmd('Fixture 1 Thru')
+    gma.cmd('Store Preset 4.' .. tostring(currentColorPresetId) .. ' /u')
+    gma.cmd('Label Preset 4.' .. tostring(currentColorPresetId) .. ' "ColorPicker lowFX"')
+	currentColorPresetId = currentColorPresetId + 1
+	gma.cmd('Store Preset 4.' .. tostring(currentColorPresetId) .. ' /u')
+    gma.cmd('Label Preset 4.' .. tostring(currentColorPresetId) .. ' "ColorPicker highFX"')
+    gma.cmd('ClearAll')
   end
 end
 
@@ -592,14 +665,147 @@ createImage = function(red, green, blue, full, imageId)
 end
 
 
-createDeleteColorPickerMacro = function()
-    local content
-    if (useImages) then
-        content ='<?xml version="1.0" encoding="utf-8"?><MA major_vers="0" minor_vers="0" stream_vers="0"><Info datetime="1970-01-01T00:00:00" showfile="" /><Macro index="0" name="Delete Color Picker"><Macroline index="0"><text>LUA "if gma.gui.confirm(\'Delete color picker ?\', \'Will be deleted: macros ' .. tostring(firstMacroId) .. '-' .. tostring(lastMacroId) .. ', layout ' .. tostring(layoutId) ..', executors ' .. tostring(execPage) .. '.' .. tostring(firstExecId) .. '-' .. tostring(execPage) .. '.' .. tostring(lastExecId) .. ', images ' .. tostring(firstImageId) .. '-' .. tostring(lastImageId) .. '\') then gma.cmd(\'Goto Macro 1.' .. tostring(currentMacroId) .. '.3\') end"</text></Macroline><Macroline index="1"><text>Off Macro 1.' .. tostring(currentMacroId) .. '</text></Macroline><Macroline index="2"><text>Delete Layout ' .. tostring(layoutId) .. '</text></Macroline><Macroline index="3"><text>Delete Image ' .. tostring(firstImageId) .. ' Thru ' .. tostring(lastImageId) .. '</text></Macroline><Macroline index="4"><text>Off Executor ' .. tostring(execPage) .. '.' .. tostring(firstExecId) .. ' Thru ' .. tostring(execPage) .. '.' .. tostring(lastExecId) .. '</text></Macroline><Macroline index="5"><text>Delete Executor ' .. tostring(execPage) .. '.' .. tostring(firstExecId) .. ' Thru ' .. tostring(execPage) .. '.' .. tostring(lastExecId) .. '</text></Macroline><Macroline index="6"><text>Delete Macro 1.' .. tostring(firstMacroId) .. ' Thru 1.' .. tostring(lastMacroId) .. '</text></Macroline></Macro></MA>'
-    else
-        content ='<?xml version="1.0" encoding="utf-8"?><MA major_vers="0" minor_vers="0" stream_vers="0"><Info datetime="1970-01-01T00:00:00" showfile="" /><Macro index="0" name="Delete Color Picker"><Macroline index="0"><text>LUA "if gma.gui.confirm(\'Delete color picker ?\', \'Will be deleted: macros ' .. tostring(firstMacroId) .. '-' .. tostring(lastMacroId) .. ', layout ' .. tostring(layoutId) ..', executors ' .. tostring(execPage) .. '.' .. tostring(firstExecId) .. '-' .. tostring(execPage) .. '.' .. tostring(lastExecId) .. '\') then gma.cmd(\'Goto Macro 1.' .. tostring(currentMacroId) .. '.3\') end"</text></Macroline><Macroline index="1"><text>Off Macro 1.' .. tostring(currentMacroId) .. '</text></Macroline><Macroline index="2"><text>Delete Layout ' .. tostring(layoutId) .. '</text></Macroline><Macroline index="3"><text>Off Executor ' .. tostring(execPage) .. '.' .. tostring(firstExecId) .. ' Thru ' .. tostring(execPage) .. '.' .. tostring(lastExecId) .. '</text></Macroline><Macroline index="4"><text>Delete Executor ' .. tostring(execPage) .. '.' .. tostring(firstExecId) .. ' Thru ' .. tostring(execPage) .. '.' .. tostring(lastExecId) .. '</text></Macroline><Macroline index="5"><text>Delete Macro 1.' .. tostring(firstMacroId) .. ' Thru 1.' .. tostring(lastMacroId) .. '</text></Macroline></Macro></MA>'
-    end
+-- Treats a GMA2 group:
+--  Creates the color macros
+--  Copies the corresponding image for the colors
+--  Adds the group name to the layout XML file
+--  Adds the macro to the layout XML file
+createColorFXPicker  = function(groupPoolId)
+  ------------------------------
+  -- Low ColorFX picker creation
+  ------------------------------
   
+  local lowFXFirstMacroId = currentMacroId -- ID of the first macro of this row
+  local lowFXLastMacroId = currentMacroId + nbColors -1 -- ID of the last macro of this row
+  local lowFXFirstImageId = currentImageId -- ID of the first image of this row
+  gma.cmd("ClearAll")
+  x = startX
+  y = y + offsetY
+  
+  -- We add the name to the layout XML file
+  textFileContent = textFileContent .. '<LayoutElement text_align_flags="18" center_x="' .. tostring(startX - (2*offsetX)) .. '" center_y="' .. tostring(y) .. '" size_h="1" size_w="3" background_color="00000000" border_color="00000000" icon="None" text="lowFX" show_id="1" show_name="1" show_type="1" show_dimmer_bar="Off" show_dimmer_value="Off" select_group="1"><image /></LayoutElement>'
+  
+  for colorId, colorValues in ipairs(colors) do
+    gma.cmd('Store Macro 1.' .. tostring(currentMacroId))
+    gma.cmd('Store Macro 1.' .. tostring(currentMacroId) .. '.1 Thru 1.' .. tostring(currentMacroId) .. '.2')
+	gma.cmd('Assign Macro 1.' .. tostring(currentMacroId) .. '.1 /cmd="Copy Preset 4.' .. tostring(firstColorPresetId + colorId - 1) .. ' At Preset 4.' .. tostring(lowFXColorPresetId) .. ' /m"')
+    gma.cmd('Appearance Macro 1.' .. tostring(currentMacroId) .. ' /r=' .. tostring(colorValues["red"]) .. ' /g=' .. tostring(colorValues["green"]) .. ' /b=' .. tostring(colorValues["blue"]))
+    
+    x = x + offsetX
+    
+    if (useImages) then -- Image are used
+      -- We copy the corresponding empty image
+      gma.cmd('Copy Image ' .. tostring(firstEmptyImageId + colorId - 1) .. ' At ' .. tostring(currentImageId))
+      gma.cmd('Label Image ' .. tostring(currentImageId) .. '"lowFX ' .. colorValues["name"] .. '"')
+      -- When the cue is triggered, the row of empty images is copied on all images of this row, and the corresponding full image is copied at the place of the current color
+      gma.cmd('Assign Macro 1.' .. tostring(currentMacroId) .. '.2 /cmd="Copy Image ' .. tostring(firstEmptyImageId) .. ' Thru ' .. tostring(lastEmptyImageId) .. ' At Image ' .. tostring(lowFXFirstImageId) .. ' /m ; Copy Image ' .. tostring(firstFullImageId + colorId - 1) .. ' At Image ' .. tostring(currentImageId) .. ' /m "')
+      gma.cmd('Label Macro 1.' .. tostring(currentMacroId) .. ' "lowFX ' .. colorValues["name"] .. '"')
+      -- We add the macro to the layout XML file
+      xmlFileContent = xmlFileContent .. '<LayoutCObject font_size="Small" center_x="' .. tostring(x) .. '" center_y="' .. tostring(y) .. '" size_h="1" size_w="1" background_color="3c3c3c" border_color="5a5a5a" icon="None" show_id="0" show_name="0" show_type="0" function_type="Simple" select_group="1" image_size="Fit"><image name="AttributePickerImage 27"><No>8</No><No>' .. tostring(currentImageId) .. '</No></image><CObject name="' .. colorValues["name"] .. '"><No>13</No><No>1</No><No>' .. tostring(currentMacroId) .. '</No></CObject></LayoutCObject>'
+      currentImageId = currentImageId + 1
+    else -- Images are not used
+      -- When the cue is triggered, we name every macro '_', and name the current macro 'VVVVVVVVVVVV'
+      gma.cmd('Assign Macro 1.' .. tostring(currentMacroId) .. '.2 /cmd="Label Macro 1.' .. tostring(lowFXFirstMacroId) .. ' Thru 1.' .. tostring(lowFXLastMacroId) .. ' _ ; Label Macro 1.' .. tostring(currentMacroId) .. ' VVVVVVVVVVVV"')
+      gma.cmd('Label Macro 1.' .. tostring(currentMacroId) .. ' "_"')
+      -- We add the macro to the layout XML file
+      xmlFileContent = xmlFileContent .. '<LayoutCObject font_size="Small" center_x="' .. tostring(x) .. '" center_y="' .. tostring(y) .. '" size_h="1" size_w="1" background_color="3c3c3c" border_color="5a5a5a" icon="None" show_id="0" show_name="1" show_type="0" function_type="Pool icon" select_group="1"><image /><CObject name="_"><No>13</No><No>1</No><No>' .. tostring(currentMacroId) .. '</No></CObject></LayoutCObject>'
+    end
+    
+    currentMacroId = currentMacroId + 1
+    gma.gui.progress.set(progressBarHandle, currentMacroId - firstMacroId)
+    gma.sleep(0.05)
+  end
+  
+  
+  ------------------------------
+  -- High ColorFX picker creation
+  ------------------------------
+  
+  local highFXFirstMacroId = currentMacroId -- ID of the first macro of this row
+  local highFXLastMacroId = currentMacroId + nbColors -1 -- ID of the last macro of this row
+  local highFXFirstImageId = currentImageId -- ID of the first image of this row
+  gma.cmd("ClearAll")
+  x = startX
+  y = y + offsetY
+  
+  -- We add the name to the layout XML file
+  textFileContent = textFileContent .. '<LayoutElement text_align_flags="18" center_x="' .. tostring(startX - (2*offsetX)) .. '" center_y="' .. tostring(y) .. '" size_h="1" size_w="3" background_color="00000000" border_color="00000000" icon="None" text="highFX" show_id="1" show_name="1" show_type="1" show_dimmer_bar="Off" show_dimmer_value="Off" select_group="1"><image /></LayoutElement>'
+  
+  for colorId, colorValues in ipairs(colors) do
+    gma.cmd('Store Macro 1.' .. tostring(currentMacroId))
+    gma.cmd('Store Macro 1.' .. tostring(currentMacroId) .. '.1 Thru 1.' .. tostring(currentMacroId) .. '.2')
+	gma.cmd('Assign Macro 1.' .. tostring(currentMacroId) .. '.1 /cmd="Copy Preset 4.' .. tostring(firstColorPresetId + colorId - 1) .. ' At Preset 4.' .. tostring(highFXColorPresetId) .. ' /m"')
+    gma.cmd('Appearance Macro 1.' .. tostring(currentMacroId) .. ' /r=' .. tostring(colorValues["red"]) .. ' /g=' .. tostring(colorValues["green"]) .. ' /b=' .. tostring(colorValues["blue"]))
+    
+    x = x + offsetX
+    
+    if (useImages) then -- Image are used
+      -- We copy the corresponding empty image
+      gma.cmd('Copy Image ' .. tostring(firstEmptyImageId + colorId - 1) .. ' At ' .. tostring(currentImageId))
+      gma.cmd('Label Image ' .. tostring(currentImageId) .. '"highFX ' .. colorValues["name"] .. '"')
+      -- When the cue is triggered, the row of empty images is copied on all images of this row, and the corresponding full image is copied at the place of the current color
+      gma.cmd('Assign Macro 1.' .. tostring(currentMacroId) .. '.2 /cmd="Copy Image ' .. tostring(firstEmptyImageId) .. ' Thru ' .. tostring(lastEmptyImageId) .. ' At Image ' .. tostring(highFXFirstImageId) .. ' /m ; Copy Image ' .. tostring(firstFullImageId + colorId - 1) .. ' At Image ' .. tostring(currentImageId) .. ' /m "')
+      gma.cmd('Label Macro 1.' .. tostring(currentMacroId) .. ' "lowFX ' .. colorValues["name"] .. '"')
+      -- We add the macro to the layout XML file
+      xmlFileContent = xmlFileContent .. '<LayoutCObject font_size="Small" center_x="' .. tostring(x) .. '" center_y="' .. tostring(y) .. '" size_h="1" size_w="1" background_color="3c3c3c" border_color="5a5a5a" icon="None" show_id="0" show_name="0" show_type="0" function_type="Simple" select_group="1" image_size="Fit"><image name="AttributePickerImage 27"><No>8</No><No>' .. tostring(currentImageId) .. '</No></image><CObject name="' .. colorValues["name"] .. '"><No>13</No><No>1</No><No>' .. tostring(currentMacroId) .. '</No></CObject></LayoutCObject>'
+      currentImageId = currentImageId + 1
+    else -- Images are not used
+      -- When the cue is triggered, we name every macro '_', and name the current macro 'VVVVVVVVVVVV'
+      gma.cmd('Assign Macro 1.' .. tostring(currentMacroId) .. '.2 /cmd="Label Macro 1.' .. tostring(highFXFirstMacroId) .. ' Thru 1.' .. tostring(highFXLastMacroId) .. ' _ ; Label Macro 1.' .. tostring(currentMacroId) .. ' VVVVVVVVVVVV"')
+      gma.cmd('Label Macro 1.' .. tostring(currentMacroId) .. ' "_"')
+      -- We add the macro to the layout XML file
+      xmlFileContent = xmlFileContent .. '<LayoutCObject font_size="Small" center_x="' .. tostring(x) .. '" center_y="' .. tostring(y) .. '" size_h="1" size_w="1" background_color="3c3c3c" border_color="5a5a5a" icon="None" show_id="0" show_name="1" show_type="0" function_type="Pool icon" select_group="1"><image /><CObject name="_"><No>13</No><No>1</No><No>' .. tostring(currentMacroId) .. '</No></CObject></LayoutCObject>'
+    end
+    
+    currentMacroId = currentMacroId + 1
+    gma.gui.progress.set(progressBarHandle, currentMacroId - firstMacroId)
+    gma.sleep(0.05)
+  end
+end
+
+createDeleteColorPickerMacro = function()
+    local content = '<?xml version="1.0" encoding="utf-8"?><MA major_vers="0" minor_vers="0" stream_vers="0"><Info datetime="1970-01-01T00:00:00" showfile="" />'
+	local nbMacroLine = 0
+	
+	content = content .. '<Macro index="' .. tostring(nbMacroLine) .. '" name="Delete Color Picker"><Macroline index="0"><text>'
+	content = content .. 'LUA "if gma.gui.confirm(\'Delete color picker ?\', \'Will be deleted: macros ' .. tostring(firstMacroId) .. '-' .. tostring(lastMacroId) .. ', layout ' .. tostring(layoutId) ..', executors ' .. tostring(execPage) .. '.' .. tostring(firstExecId) .. '-' .. tostring(execPage) .. '.' .. tostring(lastExecId)
+	
+	if (useImages) then
+      content = content .. ', images ' .. tostring(firstImageId) .. '-' .. tostring(lastImageId)
+    end
+	if (createColorFXSelector) then
+      content = content .. ', color presets 4.' .. tostring(firstColorPresetId) .. '-' .. tostring(lastColorPresetId)
+    end
+	
+	-- Display text and wait for confirmation
+	content = content .. '\') then gma.cmd(\'Goto Macro 1.' .. tostring(currentMacroId) .. '.3\') end"</text></Macroline>'
+	-- Off THIS macro (so that the user can see the confirmation message)
+	content = content .. '<Macroline index="' .. tostring(nbMacroLine) .. '"><text>Off Macro 1.' .. tostring(currentMacroId) .. '</text></Macroline>'
+	nbMacroLine = nbMacroLine + 1
+	-- Layout deletion cmd
+	content = content .. '<Macroline index="' .. tostring(nbMacroLine) .. '"><text>Delete Layout ' .. tostring(layoutId) .. '</text></Macroline>'
+	nbMacroLine = nbMacroLine + 1
+	-- Image deletion cmd
+	if (useImages) then
+	  content = content .. '<Macroline index="' .. tostring(nbMacroLine) .. '"><text>Delete Image ' .. tostring(firstImageId) .. ' Thru ' .. tostring(lastImageId) .. '</text></Macroline>'
+	  nbMacroLine = nbMacroLine + 1
+    end
+    if (createColorFXSelector) then
+	  content = content .. '<Macroline index="' .. tostring(nbMacroLine) .. '"><text>Delete Preset 4.' .. tostring(firstColorPresetId) .. ' Thru 4.' .. tostring(lastColorPresetId) .. '</text></Macroline>'
+	  nbMacroLine = nbMacroLine + 1
+    end
+	-- Off executor cmd
+	content = content .. '<Macroline index="' .. tostring(nbMacroLine) .. '"><text>Off Executor ' .. tostring(execPage) .. '.' .. tostring(firstExecId) .. ' Thru ' .. tostring(execPage) .. '.' .. tostring(lastExecId) .. '</text></Macroline>'
+	nbMacroLine = nbMacroLine + 1
+	-- Executor Deletion cmd
+	content = content .. '<Macroline index="' .. tostring(nbMacroLine) .. '"><text>Delete Executor ' .. tostring(execPage) .. '.' .. tostring(firstExecId) .. ' Thru ' .. tostring(execPage) .. '.' .. tostring(lastExecId) .. '</text></Macroline>'
+	nbMacroLine = nbMacroLine + 1
+	-- Macro deletion cmd
+	content = content .. '<Macroline index="' .. tostring(nbMacroLine) .. '"><text>Delete Macro 1.' .. tostring(firstMacroId) .. ' Thru 1.' .. tostring(lastMacroId) .. '</text></Macroline>'
+	nbMacroLine = nbMacroLine + 1
+    
+    content = content .. '</MA>'
+    
     local fileName = "macrotemp.xml"
     local filePath = gma.show.getvar('PATH') ..  '/macros/' .. fileName
     local file = io.open(filePath, "w")
@@ -796,6 +1002,16 @@ return function()
     return
   end
   
+  if (createColorFXSelector) then
+    -- We verifiy that there are enough color presets available
+    gma.gui.progress.settext(progressBarHandle, "Verifying color presets")
+    if (not findFirstAvailableColorPresets()) then
+      gma.feedback("Plugin exited: Incorrect color presets")
+      gma.gui.progress.stop(progressBarHandle)
+      return
+    end
+  end
+  
   -- We verifiy that needed execs are available
   gma.gui.progress.settext(progressBarHandle, "Verifying execs")
   if (not verifyFreeExecs()) then
@@ -809,6 +1025,9 @@ return function()
   local txt = "The Color Picker is about to be created on:\n- Layout " .. tostring(layoutId) ..  "\n- Executors " .. tostring(execPage) .. "." .. tostring(firstExecId) .. " Thru " .. tostring(execPage) .. "." .. tostring(lastExecId) .. "\n- Macros " .. tostring(firstMacroId) .. " Thru " .. tostring(lastMacroId)
   if (useImages == true) then
     txt = txt .. "\nImages " .. tostring(firstImageId) .. " Thru " .. tostring(lastImageId)
+  end
+  if (createColorFXSelector) then
+    txt = txt .. "\nPresets 4." .. tostring(firstColorPresetId) .. " Thru 4." .. tostring(lastColorPresetId)
   end
   txt = txt .. "\nIf this is not correct, please edit the plugin to change those values."
   
@@ -828,8 +1047,13 @@ return function()
   
   gma.gui.progress.setrange(progressBarHandle, 0, nbNeededMacros)
   gma.gui.progress.settext(progressBarHandle, "Creating macros: ")
+  -- We create swatchbook entries, and presets if colorFX creation is enabled
   createGels()
   treatGroupOrArray(groups)
+  
+  if (createColorFXPicker) then
+    createColorFXPicker()
+  end
   
   xmlFileContent = xmlFileContent .. '</CObjects><Texts>' .. textFileContent .. '</Texts></LayoutData></Group></MA>'
   
