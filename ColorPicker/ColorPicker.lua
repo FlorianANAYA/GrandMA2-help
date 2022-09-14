@@ -1,4 +1,4 @@
--- ColorPicker v10 - Florian ANAYA - 2020-2022
+-- ColorPicker v11 - Florian ANAYA - 2020-2022
 -- https://github.com/FlorianANAYA/GrandMA2-help
 -- This plugin will create a color picker in a layout view for several
 -- groups of fixtures. It automatically creates and imports images into GMA2
@@ -13,7 +13,7 @@
 -- Don't forget that, if the plugin doesn't work and shows no message at all,
 -- you might have made a typo in the config, you'll find more info in the
 -- system monitor.
--- Tested GrandMA2 version: 3.7, 3.8, 3.9
+-- Tested GrandMA2 version: 3.9.60
 
 -----------------------
 -- Start of settings --
@@ -55,7 +55,7 @@ local createColorFXSelector = false
 local colors =
 {
   {["name"] = "White CTO", ["swatchbook"] = '"Lee"."full CT orange"'},
-  {["name"] = "White CTB", ["swatchbook"] = '8.120'},
+  {["name"] = "White", ['red'] = 100, ['green'] = 100, ['blue'] = 100},
   {['name'] = 'Red', ['red'] = 100, ['green'] = 0, ['blue'] = 0},
   {['name'] = 'Orange', ['red'] = 100, ['green'] = 50, ['blue'] = 0,},
   {['name'] = 'Yellow', ['red'] = 100, ['green'] = 100, ['blue'] = 0,},
@@ -70,6 +70,10 @@ local colors =
   {['name'] = 'Pink', ['red'] = 100, ['green'] = 0, ['blue'] = 50},
 }
 
+-- The plugin will search for the first macro slot available to fit the total number of needed macros.
+-- By default the search starts at 1, but you can change that here by defining
+-- the first macro to use (beware that if the given macro is not available, the plugin will search further)
+local userFirstMacroId = 1
 
 -- Defines if the plugin will use images or not 
 -- 'true' means that images will be generated and used, 'false' otherwise.
@@ -920,9 +924,9 @@ return function()
   gma.cmd("ClearAll")
   
   -- We initialize variables (in case the plugin is executed twice without being reloaded)
-  firstMacroId = 1
-  currentMacroId = 1
-  lastMacroId = 1
+  firstMacroId = userFirstMacroId
+  currentMacroId = userFirstMacroId
+  lastMacroId = userFirstMacroId
   nbNeededMacros = 0
   nbNeededExecs = 0
   firstImageId = 14
@@ -1022,6 +1026,7 @@ return function()
   end
   gma.gui.progress.stop(progressBarHandle)
   
+  -- We ask the user if everything parameter is ok before actually creating the picker
   local txt = "The Color Picker is about to be created on:\n- Layout " .. tostring(layoutId) ..  "\n- Executors " .. tostring(execPage) .. "." .. tostring(firstExecId) .. " Thru " .. tostring(execPage) .. "." .. tostring(lastExecId) .. "\n- Macros " .. tostring(firstMacroId) .. " Thru " .. tostring(lastMacroId)
   if (useImages == true) then
     txt = txt .. "\nImages " .. tostring(firstImageId) .. " Thru " .. tostring(lastImageId)
@@ -1036,7 +1041,9 @@ return function()
     gma.gui.msgbox("Operation canceled", "The creation of the color picker has been aborted.")
     return
   end
-    
+  
+  -- Everything ok, we start the creation
+  gma.cmd("SelectDrive 1") -- We select the main drive otherwiwe importing images and layout will fail
   gma.cmd("BlindEdit on")
   progressBarHandle = gma.gui.progress.start("Creating Color Picker")
   
