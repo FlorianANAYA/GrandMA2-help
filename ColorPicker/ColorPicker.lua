@@ -1,4 +1,4 @@
--- ColorPicker v11 - Florian ANAYA - 2020-2022
+-- ColorPicker v12 - Florian ANAYA - 2020-2024
 -- https://github.com/FlorianANAYA/GrandMA2-help
 -- This plugin will create a color picker in a layout view for several
 -- groups of fixtures. It automatically creates and imports images into GMA2
@@ -1058,7 +1058,7 @@ return function()
   createGels()
   treatGroupOrArray(groups)
   
-  if (createColorFXPicker) then
+  if (createColorFXSelector) then
     createColorFXPicker()
   end
   
